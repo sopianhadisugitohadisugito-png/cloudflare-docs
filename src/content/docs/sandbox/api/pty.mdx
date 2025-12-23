@@ -1,0 +1,394 @@
+---
+title: PTY (Pseudo-Terminal)
+pcx_content_type: concept
+sidebar:
+  order: 8
+---
+
+import { TypeScriptExample } from "~/components";
+
+Manage interactive terminal sessions with pseudo-terminal (PTY) support, enabling full terminal emulation for interactive shell applications.
+
+PTY sessions provide xterm-256color terminal emulation with support for interactive programs like vim, nano, and interactive shells. PTY handles support both real-time WebSocket and HTTP polling transports for terminal I/O.
+
+## Methods
+
+### `sandbox.pty.create()`
+
+Create a new PTY session with terminal emulation.
+
+```ts
+const pty = await sandbox.pty.create(options?: CreatePtyOptions): Promise<Pty>
+```
+
+**Parameters**:
+- `options` (optional):
+  - `cols` - Terminal width in columns (default: `80`)
+  - `rows` - Terminal height in rows (default: `24`)
+  - `command` - Command array to run (default: `['/bin/bash']`)
+  - `cwd` - Working directory (default: `/home/user`)
+  - `env` - Environment variables
+  - `disconnectTimeout` - Time in milliseconds before orphaned PTY is killed (default: `30000`)
+
+**Returns**: `Promise<Pty>` - PTY handle for interacting with the terminal
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({
+  cols: 80,
+  rows: 24
+});
+
+pty.onData((data) => terminal.write(data));
+pty.write('ls -la\n');
+```
+</TypeScriptExample>
+
+### `sandbox.pty.attach()`
+
+Attach a PTY to an existing session, inheriting its working directory and environment variables.
+
+```ts
+const pty = await sandbox.pty.attach(sessionId: string, options?: AttachPtyOptions): Promise<Pty>
+```
+
+**Parameters**:
+- `sessionId` - Session ID to attach to
+- `options` (optional):
+  - `cols` - Terminal width in columns (default: `80`)
+  - `rows` - Terminal height in rows (default: `24`)
+  - `command` - Command array to run (default: `['/bin/bash']`)
+  - `disconnectTimeout` - Time in milliseconds before orphaned PTY is killed (default: `30000`)
+
+**Returns**: `Promise<Pty>` - PTY handle that shares the session context
+
+<TypeScriptExample>
+```
+// Create a session and change directory
+const session = await sandbox.sessions.create();
+await sandbox.exec('cd /workspace/project', { sessionId: session.id });
+
+// Attach PTY to session - starts in /workspace/project
+const pty = await sandbox.pty.attach(session.id, { cols: 100, rows: 30 });
+```
+</TypeScriptExample>
+
+### `sandbox.pty.getById()`
+
+Reconnect to an existing PTY session by ID.
+
+```ts
+const pty = await sandbox.pty.getById(id: string): Promise<Pty>
+```
+
+**Parameters**:
+- `id` - PTY ID from previous creation
+
+**Returns**: `Promise<Pty>` - PTY handle for the existing session
+
+<TypeScriptExample>
+```
+// Reconnect to PTY after disconnect
+const pty = await sandbox.pty.getById('pty_abc123');
+```
+</TypeScriptExample>
+
+### `sandbox.pty.list()`
+
+List all active PTY sessions in the sandbox.
+
+```ts
+const ptys = await sandbox.pty.list(): Promise<PtyInfo[]>
+```
+
+**Returns**: `Promise<PtyInfo[]>` - Array of PTY information objects with:
+- `id` - Unique PTY identifier
+- `sessionId` - Associated session ID (if attached)
+- `cols` - Terminal width
+- `rows` - Terminal height
+- `command` - Command running in PTY
+- `cwd` - Working directory
+- `createdAt` - Creation timestamp
+- `state` - Current state (`'running'` or `'exited'`)
+- `exitCode` - Exit code (if exited)
+
+<TypeScriptExample>
+```
+const ptys = await sandbox.pty.list();
+
+for (const pty of ptys) {
+  console.log(`PTY ${pty.id}: ${pty.command.join(' ')} (${pty.cols}x${pty.rows})`);
+}
+```
+</TypeScriptExample>
+
+### `sandbox.pty.getInfo()`
+
+Get PTY information without creating a handle (useful for serialization or inspection).
+
+```ts
+const info = await sandbox.pty.getInfo(id: string): Promise<PtyInfo>
+```
+
+**Parameters**:
+- `id` - PTY ID
+
+**Returns**: `Promise<PtyInfo>` - PTY information object
+
+<TypeScriptExample>
+```
+const info = await sandbox.pty.getInfo('pty_abc123');
+console.log(`State: ${info.state}, Exit code: ${info.exitCode}`);
+```
+</TypeScriptExample>
+
+### `sandbox.pty.resize()`
+
+Resize a PTY terminal window (synchronous operation that waits for completion).
+
+```ts
+await sandbox.pty.resize(id: string, cols: number, rows: number): Promise<void>
+```
+
+**Parameters**:
+- `id` - PTY ID
+- `cols` - New terminal width (1-1000)
+- `rows` - New terminal height (1-1000)
+
+<TypeScriptExample>
+```
+await sandbox.pty.resize('pty_abc123', 120, 40);
+```
+</TypeScriptExample>
+
+### `sandbox.pty.write()`
+
+Send input to a PTY (synchronous operation that waits for completion).
+
+```ts
+await sandbox.pty.write(id: string, data: string): Promise<void>
+```
+
+**Parameters**:
+- `id` - PTY ID
+- `data` - Input data to send
+
+<TypeScriptExample>
+```
+await sandbox.pty.write('pty_abc123', 'echo "Hello"\n');
+```
+</TypeScriptExample>
+
+### `sandbox.pty.kill()`
+
+Terminate a PTY process (synchronous operation that waits for completion).
+
+```ts
+await sandbox.pty.kill(id: string, signal?: string): Promise<void>
+```
+
+**Parameters**:
+- `id` - PTY ID
+- `signal` (optional) - Signal to send (for example, `'SIGTERM'`, `'SIGKILL'`). Default: `'SIGTERM'`
+
+<TypeScriptExample>
+```
+await sandbox.pty.kill('pty_abc123', 'SIGKILL');
+```
+</TypeScriptExample>
+
+## PTY handle methods
+
+The `Pty` object returned by `create()`, `attach()`, and `getById()` provides methods for terminal interaction.
+
+### `pty.write()`
+
+Send input to the terminal.
+
+```ts
+await pty.write(data: string): Promise<void>
+```
+
+**Parameters**:
+- `data` - Input string to send (can include control characters and escape sequences)
+
+Returns a Promise that resolves on success or rejects on failure. For interactive typing, you can ignore the promise. For programmatic commands, await to catch errors.
+
+With HTTP transport, awaiting confirms delivery to the container. With WebSocket transport, the promise resolves immediately after sending.
+
+<TypeScriptExample>
+```
+// Interactive typing (fire-and-forget)
+pty.write('ls -la\n');
+
+// Programmatic command (await for error handling)
+try {
+  await pty.write('python script.py\n');
+} catch (error) {
+  console.error('Failed to send command:', error);
+}
+
+// Send control characters
+await pty.write('\x03'); // Ctrl+C
+```
+</TypeScriptExample>
+
+### `pty.resize()`
+
+Resize the terminal window.
+
+```ts
+await pty.resize(cols: number, rows: number): Promise<void>
+```
+
+**Parameters**:
+- `cols` - New terminal width (1-1000)
+- `rows` - New terminal height (1-1000)
+
+With HTTP transport, awaiting confirms the resize completed. With WebSocket transport, the promise resolves immediately after sending.
+
+<TypeScriptExample>
+```
+await pty.resize(120, 40);
+```
+</TypeScriptExample>
+
+### `pty.kill()`
+
+Terminate the PTY process.
+
+```ts
+await pty.kill(signal?: string): Promise<void>
+```
+
+**Parameters**:
+- `signal` (optional) - Signal to send (for example, `'SIGTERM'`, `'SIGKILL'`)
+
+<TypeScriptExample>
+```
+await pty.kill('SIGTERM');
+```
+</TypeScriptExample>
+
+### `pty.onData()`
+
+Register a callback to receive terminal output.
+
+```ts
+const unsubscribe = pty.onData(callback: (data: string) => void): () => void
+```
+
+**Parameters**:
+- `callback` - Function called with output data chunks
+
+**Returns**: Function to unsubscribe from future data events
+
+<TypeScriptExample>
+```
+const unsubscribe = pty.onData((data) => {
+  terminal.write(data);
+});
+
+// Later, stop listening
+unsubscribe();
+```
+</TypeScriptExample>
+
+### `pty.onExit()`
+
+Register a callback for when the PTY process exits.
+
+```ts
+const unsubscribe = pty.onExit(callback: (exitCode: number) => void): () => void
+```
+
+**Parameters**:
+- `callback` - Function called with exit code when process terminates
+
+**Returns**: Function to unsubscribe from exit event
+
+<TypeScriptExample>
+```
+pty.onExit((exitCode) => {
+  console.log(`Process exited with code ${exitCode}`);
+});
+```
+</TypeScriptExample>
+
+### `pty.exited`
+
+Promise that resolves when the PTY exits.
+
+```ts
+const result = await pty.exited: Promise<{ exitCode: number }>
+```
+
+**Returns**: `Promise<{ exitCode: number }>` that resolves with exit information
+
+<TypeScriptExample>
+```
+const { exitCode } = await pty.exited;
+console.log(`Process completed with exit code: ${exitCode}`);
+```
+</TypeScriptExample>
+
+### `pty.close()`
+
+Detach from the PTY session. The PTY continues running in the background until the disconnect timeout expires.
+
+```ts
+pty.close(): void
+```
+
+<TypeScriptExample>
+```
+pty.close(); // Detach but PTY keeps running
+```
+</TypeScriptExample>
+
+### Async iteration
+
+PTY handles support async iteration for scripting use cases where you need to process output sequentially.
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+pty.write('ls -la\n');
+pty.write('exit\n');
+
+for await (const data of pty) {
+  console.log('Output:', data);
+}
+
+console.log('PTY session ended');
+```
+</TypeScriptExample>
+
+## Terminal dimensions
+
+Terminal dimensions must be between 1 and 1000 for both columns and rows. Attempting to create or resize a PTY with invalid dimensions will result in an error.
+
+## Disconnect timeout
+
+PTY sessions include a disconnect timeout (default: 30 seconds) that automatically terminates the PTY if no client is connected. This prevents orphaned PTY sessions from consuming resources.
+
+When you reconnect with `getById()`, the disconnect timeout is cancelled. When you call `close()` or your connection drops, the timeout starts again.
+
+## Exit codes and signals
+
+When a PTY process exits, the exit code indicates how it terminated:
+
+- `0` - Normal exit (success)
+- `1-255` - Process exit code
+- `128 + N` - Process killed by signal N (for example, `130` = SIGINT, `143` = SIGTERM)
+
+Common signal exit codes:
+- `130` (128 + 2) - SIGINT (Ctrl+C)
+- `137` (128 + 9) - SIGKILL
+- `143` (128 + 15) - SIGTERM
+
+## Related resources
+
+- [Interactive terminals guide](/sandbox/guides/interactive-terminals/) - Build terminal applications with PTY
+- [Sessions API](/sandbox/api/sessions/) - Session management for PTY attachment
+- [Commands API](/sandbox/api/commands/) - Non-interactive command execution
